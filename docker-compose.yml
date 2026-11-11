@@ -1,0 +1,52 @@
+# The whole stack with one command:  docker compose up --build
+# Then open http://localhost:3000
+#
+# Two servers run on purpose. Open the board in two tabs and each tab may be
+# talking to a different server. They stay in sync through Postgres and Redis.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wheels
+      POSTGRES_PASSWORD: wheels
+      POSTGRES_DB: wheels
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wheels"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+
+  server-a: &server
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      DATABASE_URL: postgres://wheels:wheels@postgres:5432/wheels
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "4000:4000"
+
+  server-b:
+    <<: *server
+    ports:
+      - "4001:4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+    depends_on:
+      - server-a
+    ports:
+      - "3000:80"
